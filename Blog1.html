@@ -63,10 +63,11 @@
 									<a class="image"><img src="images/rasterize.JPG" alt="" /></a></p>
 
 									<p>	
-									First, we need to import the required modules. Here, <i>gdal</i> and <i>numpy</i> are required for handling raster data in its original state (.tif) and when they are rendered as numpy arrays respectively, <i>ogr</i> is required for handling vector data and <i>tempfile</i> for temporary file management ( i.e. we will save some files initially as a temporary file). <br>	
+									First, we need to import the required modules. Here, <i>gdal</i> and <i>numpy</i> are required for handling raster data in its original state (.tif) and when they are rendered as numpy arrays respectively, <i>gdalnumeric</i> is the interface between gdal and numpy, <i>ogr</i> is required for handling vector data and <i>tempfile</i> for temporary file management ( i.e. we will save some files initially as a temporary file). <br>	
 									<pre style="white-space: normal; text-align: left">
 										<code>
 											import gdal <br>
+											import gdalnumeric as gdn<br>
 											import ogr <br>
 											import numpy as np <br>
 											import tempfile
@@ -101,13 +102,83 @@
 										</code>
 									</pre>
 									</p>
-									<li>Doctor of Philosophy in Physical Geography | Oct 2018 - present.</li>
-									<ul style="padding-left:20px">
-									    <p style="margin-left:1em">
-									    	Department of Geography and Geology, Edge Hill University, United Kingdom.<br>
-									    	<strong>Thesis:</strong> <i>Monitoring spatio-temporal dynamics of grazing lawns in southern African savannahs using very-high-resolution satellite imagery. | Supervisor: Prof. Paul Aplin</i>.
-									    </p>							    
-									</ul>
+
+									<p>
+									The script above is the rasterize function, which takes three arguments. <i>ref_raster</i> is the reference image from which the resulting image extent and projection are extracted; <i>shp</i> is the vector layer (shapefile) to be rasterized and <i>attrib_name</i> is the vector attribute whose data will be burned into the resulting raster.<br>
+									Next is the image to array function (<i>img_to_array</i>) which takes the resulting raster (<i>input_file</i>) from the <i>rasterize</i> function and converts it into an image array.<br>
+									<pre style="white-space: normal; text-align: left">
+										<code>
+											def img_to_array(input_file, dim_ordering="channel_last", dtype="float32"):<br>
+											<p style="margin-left: 1em">
+											<i># open input raster, retrieve bands and convert to image array</i><br>
+											file = gdal.Open(input_file)<br>
+											bands = [file.GetRasterBand(i) for i in range(1, file.RasterCount +1)]<br>
+											arr = np.array([gdn.BandReadAsArray(band) for band in bands]).astype(dtype)<br><br>
+											<i># reoder dimensions so that channels/bands are last</i><br>
+											if dim_ordering=="channel_last":	
+											arr = np.transpose(arr, [1,2,0])<br>
+											return arr
+											</p>
+										</code>
+									</pre>
+									</p>
+
+									<p>
+									The last supporting function is <i>array_to_tif</i> which takes three arguments: <i>array</i> is the image array from the <i>img_to_array</i> function; <i>raster</i> is a reference image used to determine the extent and projection of the output image (.tif); and <i>dst_filename</i> is the destination filename used to write the output image file to disk.
+									<pre style="white-space: normal; text-align: left">
+										<code>
+											def array_to_tif(array, raster, dst_filename):<br>
+											<p style="margin-left: 1em">
+											<i># set output image resolution, extent and projection</i><br>
+											src_raster = gdal.Open(raster)<br>
+											x_pixels = src_raster.RasterXSize<br>
+											y_pixels = src.raster.RasterYSize<br>
+											ext = src_raster.GetGeoTransform()<br>
+											proj = src_raster.GetProjection()<br><br>
+											<i># create empty raster (.tif) to which array will be written</i><br>
+											bands = array.shape[2]<br>
+											dtype = str(array.dtype)<br>
+											dtype_mapping = {'byte': gd.GDT_Byte, 'uint8': gd.GDT_Byte, 'uint16': gd.GDT_UInt16, 'int8': gd.GDT_Byte,  'int16': gd.GDT_Int16, 'int32': gd.GDT_Int32, 'uint32': gd.GDT_UInt32, 'float32': gd.GDT_Float32}<br>
+											driver = gdal.GetDriverByName('GTiff')<br>
+											output = driver.Create(dst_filename, x_pixels, y_pixels, bands, dtype_mapping[dtype])<br><br>
+											<i># set output image extent and projection</i><br>
+											output.SetGeoTransform(ext)<br>
+											output.SetProjection(proj)<br><br>
+											<i># write image array into empty raster</i><br>
+											for i in range(bands): output.GetRasterBand(i+1).WriteArray(array[:, :, i])<br>
+											output.FlushCache()
+											</p>
+										</code>
+									</pre>
+									</p>
+
+									<p>
+									With all the supporting functions ready, the last steps involve importing the reference raster and the vector data to be rasterized, processing the vector data to get the desired attributes to use, running the rasterization process proper (i.e. creating multiband raster) and finally saving the multiband raster. The script below does exactly these.
+									<pre style="white-space: normal; text-align: left">
+										<code>
+											<i># import data</i><br>
+											inRaster = "path/to/reference/raster.tif"<br>
+											inVector = "path/to/vector/data.shp"<br><br>
+											<i># get vector layer attribute names</i><br>
+											lyr = ogr.Open(inVector)<br>
+											lyr = lyr.GetLayer()<br>
+											all_attribs = [attrib.name for attrib in lyr.schema]<br>
+											final_attribs = [attribs for attribs in all_attribs if attribs not in ['list of attributes to exclude']]<br><br>
+											<i># create multiband raster</i><br>
+											img_array_list = []<br>
+											for i in final_attribs:<br>
+											<blockquote>
+												fx = rasterize(inRaster, inVector, i)<br>
+												fx_array = img_to_array(fx)<br>
+												img_array_list.append(fx_array)
+											</blockquote><br>
+											fx_multi = np.concatenate(img_array_list, axis=-1)<br><br>
+											<i># save raster</i><br>
+											array_to_tif(fx_multi.astype(np.float32), inRaster, "path/to/multiband/raster.tif")
+										</code>
+									</pre>
+									</p>
+									<p>Congratulations! This is all you need to do to create a multiband raster from multiple verctor attributes. Thanks for stopping by.</p>
 									
 								</div>
 							</section>	
