@@ -1,0 +1,135 @@
+<!DOCTYPE HTML>
+<!--
+	Read Only by HTML5 UP
+	html5up.net | @ajlkn
+	Free for personal and commercial use under the CCA 3.0 license (html5up.net/license)
+-->
+<html>
+	<head>
+		<title>Rasterize: How to create multiband raster from vector attributes using python</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+		<link rel="stylesheet" href="assets/css/main.css" />
+	</head>
+	<body class="is-preload">
+		<!-- Header -->
+			<section id="header">
+				<header>
+					<span class="image avatar"><img src="images/me_pro.jpg" alt="" /></span>
+					<h1 id="logo"><a href="index.html#main">Kwame T. Awuah</a></h1>
+					<p>Landscape Ecologist | Forest Scientist | Geospatial Data Scientist</p>
+				</header>
+				<nav id="nav">
+					<ul>
+						<!--<li><a href="#intro" class="active">About Me</a></li>-->
+						<li><a href="index.html#cv">About Me</a></li>
+						<li><a href="index.html#research">Research</a></li>
+						<li><a href="index.html#blog">Blog</a></li>
+						<li><a href="index.html#contact">Contact</a></li>
+					</ul>
+				</nav>
+				<footer>
+					<ul class="icons">
+						<li><a href="https://twitter.com/kwame_awuah1" class="icon brands fa-twitter"><span class="label">Twitter</span></a></li>
+						<li><a href="https://www.linkedin.com/in/kwame-awuah-17669198/" class="icon brands fa-linkedin"><span class="label">LinkedIn</span></a></li>
+						<li><a href="https://www.instagram.com/kwame_awuah1/" class="icon brands fa-instagram"><span class="label">Instagram</span></a></li>
+						<li><a href="https://github.com/tkawuah" class="icon brands fa-github"><span class="label">Github</span></a></li>
+						<li><a href="mailto:tkawuah@gmail.com" class="icon solid fa-envelope"><span class="label">Email</span></a></li>
+					</ul>
+				</footer>
+			</section>
+
+			<div id="wrapper">
+
+				<!-- Main -->
+					<div id="main">
+						<!-- One -->
+							<section id="intro">
+								<div class="image main" data-position="center">
+									<img src="images/AWF.jpg" alt="" />
+								</div>
+							</section>
+
+						<!-- two -->
+							<section id="cv_in_detail">
+								<div class="container">
+									<header class="major">
+										<h3>Rasterize: How to create multiband raster from vector attributes using python</h3>
+									</header>
+									<p> Raster and vector data are the two primary types of geospatial data. While rasters store data as gridded values that are rendered as pixels on a map, vector data stores assigned attributes of specific features represented as points, lines and polygons.
+									In geospatial data processing workflows, converting between these two data types is a common practice for several reasons. This can either be just for the purpose of visualizing the data or for incorporation into analysis schemes among others.<br><br>
+									This blog post focuses on the conversion of vector to raster data (a.k.a rasterizing), particularly the challenge of creating a multiband raster from multiple vector attributes, and introduces a python-based approach for overcoming this bottleneck. <br><br>
+									In simple terms, rasterizing vector data simply means burning the data stored in a given vector attribute into an empty raster layer of defined extent and pixel size. But what is the deal with creating multiband raster from multiple vector attributes?... Well, the implementation of the rasterize function in conventional GIS softwares (e.g. QGIS and ArcGIS) only outputs a single band raster at a time. This means that the process allows burning one vector attribute into a corresponding single band raster. At best, one can use batch processing or use model builder in case they are interested in burning multiple attributes into multiple single band rasters and then merging them into a multiband raster. But what if there are 100s or more attributes? That will be laborious and inefficient. This is where the power of python scripting comes in. In this example I share a case of converting the output from image segmentation (polygons with 92 feature attributes) into a multiband raster for further classification. Read on...<br>
+									<a class="image"><img src="images/rasterize.JPG" alt="" /></a></p>
+
+									<p>	
+									First, we need to import the required modules. Here, <i>gdal</i> and <i>numpy</i> are required for handling raster data in its original state (.tif) and when they are rendered as numpy arrays respectively, <i>ogr</i> is required for handling vector data and <i>tempfile</i> for temporary file management ( i.e. we will save some files initially as a temporary file). <br>	
+									<pre style="white-space: normal; text-align: left">
+										<code>
+											import gdal <br>
+											import ogr <br>
+											import numpy as np <br>
+											import tempfile
+										</code>
+									</pre>
+									</p>
+									<p>
+									Next, we need to create some base fuctions on which the whole process will run. To summarize what we want to achieve: (i) Each vector attribute will be burned into a single band raster. The extent, resolution and projection of each raster will be sourced from a reference image. In this case, the original image used for segmentation; (ii) Each raster will then be converted into a 3-D numpy array (i.e. rows, colums, bands) and subsequently concatenated into a multiband image array; (iii) Lastly, the multiband image array will be converted into .tif raster and then written to file.<br>
+									<pre style="white-space: normal; text-align: left">
+										<code>
+											def rasterize(ref_raster, shp, attrib_name):<br>
+											<p style="margin-left: 1em">
+											<i># open reference raster and fetch resolution, projection and extent</i><br>
+											raster_ds = gdal.Open(ref_raster)<br>
+											ncol = raster_ds.RasterXSize<br>
+											nrow = raster_ds.RasterYSize<br>
+											proj = raster_ds.GetProjectionRef()<br>
+											ext = raster_ds.GetGeoTransform()<br>
+											raster_ds = None <br><br>
+											<i># create empty raster (.tif) as temporary file and set its projection and extent to <br> # that of the reference raster</i><br>
+											temp_out = tempfile.NamedTemporaryFile(suffix='.tif').name<br>
+											memory_driver = gdal.GetDriverByName('GTiff')<br>
+											out_raster_ds = memory_driver.Create(temp_out, ncol, nrow, 1, gdal.GDT_Byte)<br>
+											out_raster_ds.SetProjection(proj)<br>
+											out_raster_ds.SetGeoTransform(ext)<br><br>
+											# open shapefile vector layer to retrieve and burn attribute into the empty raster<br>
+											mb_v = ogr.Open(shp)<br>
+											mb_1 = mb_v.GetLayer()<br>
+											gdal.RasterizeLayer(out_raster_ds, [1], mb_1, options=["ATTRIBUTE="+attrib_name])<br>
+											return temp_out
+											</p>
+										</code>
+									</pre>
+									</p>
+									<li>Doctor of Philosophy in Physical Geography | Oct 2018 - present.</li>
+									<ul style="padding-left:20px">
+									    <p style="margin-left:1em">
+									    	Department of Geography and Geology, Edge Hill University, United Kingdom.<br>
+									    	<strong>Thesis:</strong> <i>Monitoring spatio-temporal dynamics of grazing lawns in southern African savannahs using very-high-resolution satellite imagery. | Supervisor: Prof. Paul Aplin</i>.
+									    </p>							    
+									</ul>
+									
+								</div>
+							</section>	
+					</div>
+
+				<!-- Footer -->
+					<section id="footer">
+						<div class="container">
+							<ul class="copyright">
+								<li>&copy; Copyright 2021. All rights reserved.</li><li>Kwame T. Awuah</li>
+							</ul>
+						</div>
+					</section>
+			</div>
+
+		<!-- Scripts -->
+			<script src="assets/js/jquery.min.js"></script>
+			<script src="assets/js/jquery.scrollex.min.js"></script>
+			<script src="assets/js/jquery.scrolly.min.js"></script>
+			<script src="assets/js/browser.min.js"></script>
+			<script src="assets/js/breakpoints.min.js"></script>
+			<script src="assets/js/util.js"></script>
+			<script src="assets/js/main.js"></script>
+	</body>
+</html>
